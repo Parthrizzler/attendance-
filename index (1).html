@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Attendance planner: how many leaves can I take?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f5fa; --surface:#ffffff; --ink:#14213d; --muted:#5b6785; --line:#d5dbe9;
+  --accent:#1f3fbf; --go:#0f7b4f; --go-bg:#dff3e8; --skip:#b4540a; --skip-bg:#fde8d2; --bad:#b3261e; --bad-bg:#fbe0dd;
+  --head:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1424; --surface:#172036; --ink:#e8ecf8; --muted:#9aa6c6; --line:#2b3857;
+    --accent:#7d96ff; --go:#6fe0a8; --go-bg:#12372a; --skip:#ffb26b; --skip-bg:#41290f; --bad:#ff9a92; --bad-bg:#431a17; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1424; --surface:#172036; --ink:#e8ecf8; --muted:#9aa6c6; --line:#2b3857;
+  --accent:#7d96ff; --go:#6fe0a8; --go-bg:#12372a; --skip:#ffb26b; --skip-bg:#41290f; --bad:#ff9a92; --bad-bg:#431a17; color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 var(--body)}
+main{max-width:640px;margin:0 auto;padding:28px 18px 56px}
+h1{font:800 clamp(28px,6vw,40px)/1.1 var(--head);margin:0 0 8px;letter-spacing:-.02em}
+h2{font:600 19px/1.2 var(--head);margin:0 0 12px}
+.lede{color:var(--muted);margin:0 0 24px;max-width:60ch}
+section{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+label{display:block;font-size:14px;font-weight:500;margin-bottom:4px}
+input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-height:42px}
+input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+#result{border-width:2px}
+.big{font:800 clamp(64px,18vw,104px)/1 var(--head);letter-spacing:-.04em;margin:4px 0}
+.big small{font-size:.28em;font-weight:600;letter-spacing:0;color:var(--muted);margin-left:8px}
+.msg{font-size:17px;margin:0 0 14px}
+.bar{display:flex;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:14px 0 8px}
+.bar div{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden}
+.must{background:var(--go-bg);color:var(--go)}
+.skipb{background:repeating-linear-gradient(135deg,var(--skip-bg),var(--skip-bg) 6px,transparent 6px,transparent 12px);color:var(--skip)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:16px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.stat b{display:block;font:600 22px var(--head)}
+.stat span{font-size:13px;color:var(--muted)}
+.err{background:var(--bad-bg);color:var(--bad);border-radius:8px;padding:10px 12px;font-size:15px}
+.bad{color:var(--bad)}
+details{margin-top:16px;border-top:1px solid var(--line);padding-top:12px;font-size:14px}
+summary{cursor:pointer;font-weight:600}
+details p{margin:8px 0 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>How many leaves can I take?</h1>
+  <p class="lede">Enter your attendance so far and the attendance you want by 31 December. We’ll tell you how many lectures and how many days you can miss.</p>
+
+  <section>
+    <div class="grid">
+      <div><label for="cur">Your current attendance (%)</label><input id="cur" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="e.g. 85"></div>
+      <div><label for="want">Attendance you want by 31 Dec (%)</label><input id="want" type="number" min="1" max="100" step="any" value="80" inputmode="decimal"></div>
+    </div>
+  </section>
+
+  <section id="result" aria-live="polite"></section>
+</main>
+
+<script>
+(function(){
+  // ---- Fixed numbers: edit here if they change ----
+  var F=152;        // lectures still to be held, 21 Oct to 31 Dec
+  var DAYS=38;      // teaching days in that period
+  var T=83;         // lectures held from 18 Sep to 20 Oct (26 teaching days, 2 holidays)
+  // -------------------------------------------------
+  var PER_DAY=F/DAYS; // average lectures per day (4)
+
+  var $=function(id){return document.getElementById(id)};
+  function num(id){var v=parseFloat($(id).value);return isNaN(v)?null:v}
+  function save(){try{localStorage.setItem("attendance-planner-v3",JSON.stringify({c:$("cur").value,w:$("want").value}))}catch(e){}}
+  function load(){try{var o=JSON.parse(localStorage.getItem("attendance-planner-v3")||"null");if(o){$("cur").value=o.c||"";$("want").value=o.w||80}}catch(e){}}
+  function r1(x){return (Math.round(x*10)/10).toFixed(1)}
+
+  function note(){
+    return '<details><summary>How this was worked out</summary>'+
+      '<p>From 21 Oct to 31 Dec there are <b>'+F+'</b> lectures over <b>'+DAYS+'</b> teaching days, about '+PER_DAY+' lectures a day.</p>'+
+      '<p>Your lectures so far (18 Sep to 20 Oct): <b>'+T+'</b>. Leaves = your current % minus the % you want, applied to those '+T+' lectures, plus the buffer you earn from the new lectures. The leaves are rounded down to stay safe.</p></details>';
+  }
+
+  function calc(){
+    save();
+    var R=$("result"),c=num("cur"),p=num("want");
+    if(c===null||p===null){
+      R.innerHTML='<h2>Your result</h2><p class="msg" style="margin:0;color:var(--muted)">Enter your current attendance to see how many leaves you can take.</p>';return;
+    }
+    if(c<0||c>100){R.innerHTML='<h2>Your result</h2><div class="err">Your current attendance must be between 0 and 100.</div>';return}
+    if(p<=0||p>100){R.innerHTML='<h2>Your result</h2><div class="err">The attendance you want must be between 1 and 100.</div>';return}
+    var A=c/100*T;
+    var raw=Math.floor((100*A-p*T+(100-p)*F)/100+1e-9);
+    var best=(A+F)/(T+F)*100;
+    var h='<h2>Your result</h2>';
+    if(raw<0){
+      h+='<div class="big bad">0<small>leaves</small></div>';
+      h+='<p class="msg">Even if you attend every lecture until 31 Dec, you’ll reach <b>'+r1(best)+'%</b>, which is below the '+p+'% you want. Speak to your teacher about make-up classes or condonation.</p>';
+    }else{
+      var L=Math.min(raw,F),must=F-L;
+      var dOff=Math.min(DAYS,Math.floor(L/PER_DAY+1e-9)),dOn=DAYS-dOff;
+      var fin=(A+F-L)/(T+F)*100;
+      var mw=must/F*100,sw=100-mw;
+      h+='<div class="big">'+L+'<small>lectures you can miss</small></div>';
+      h+='<p class="msg">That’s about <b>'+dOff+' day'+(dOff===1?'':'s')+'</b> of leave, at '+PER_DAY+' lectures a day. Attend at least <b>'+must+'</b> of the '+F+' lectures until 31 Dec.</p>';
+      h+='<div class="bar" role="img" aria-label="'+must+' lectures to attend, '+L+' lectures you can miss">'+
+        (mw>0?'<div class="must" style="width:'+mw+'%">'+(mw>16?'Attend '+must:'')+'</div>':'')+
+        (sw>0?'<div class="skipb" style="width:'+sw+'%">'+(sw>16?'Can miss '+L:'')+'</div>':'')+'</div>';
+      h+='<div class="legend"><span>Solid green: lectures to attend</span><span>Striped orange: lectures you can miss</span></div>';
+      h+='<div class="stats">'+
+        '<div class="stat"><b>'+dOff+' of '+DAYS+'</b><span>Days you can take off</span></div>'+
+        '<div class="stat"><b>'+dOn+'</b><span>Days you must attend</span></div>'+
+        '<div class="stat"><b>'+r1(fin)+'%</b><span>Final if you use every leave</span></div>'+
+        '<div class="stat"><b>'+r1(best)+'%</b><span>Final if you miss none</span></div></div>';
+    }
+    h+=note();
+    R.innerHTML=h;
+  }
+
+  load();
+  ["cur","want"].forEach(function(id){$(id).addEventListener("input",calc)});
+  calc();
+})();
+</script>
+</body>
+</html>
